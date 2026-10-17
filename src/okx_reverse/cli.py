@@ -64,6 +64,17 @@ def cmd_audit(args):
     return 0
 
 
+def find_market_for(bars: pd.DataFrame, inst_id: str | None) -> pd.DataFrame:
+    """行情归属 fail-closed（OKX-P1-01）：交易对不匹配即抛错，绝不返回其他币种 K 线。"""
+    if bars is None or bars.empty:
+        raise ValueError("MARKET_NOT_AVAILABLE: 无行情数据")
+    available = sorted(bars["inst_id"].astype(str).unique())
+    if inst_id and inst_id not in available:
+        raise ValueError(f"MARKET_INST_MISMATCH: 需要 {inst_id} 的行情，实际文件包含 {available}；拒绝错配分析")
+    sel = bars[bars["inst_id"] == inst_id] if inst_id else bars
+    return sel.reset_index(drop=True)
+
+
 def _find_market(market_arg: str | None, inst_id: str | None) -> pd.DataFrame | None:
     paths = []
     if market_arg:
@@ -75,9 +86,11 @@ def _find_market(market_arg: str | None, inst_id: str | None) -> pd.DataFrame | 
             bars = import_market_bars(p)
         except Exception:
             continue
-        if inst_id and (bars["inst_id"] == inst_id).any():
-            bars = bars[bars["inst_id"] == inst_id]
-        return bars.reset_index(drop=True)
+        try:
+            return find_market_for(bars, inst_id)
+        except ValueError as e:
+            print(f"WARN: {e}")
+            return None
     return None
 
 
@@ -168,8 +181,18 @@ def cmd_backtest(args):
     bt = run_strategy(bars, entry, exit_, cfg)
     bh = buy_and_hold(bars, cfg)
     ledger, _ = rebuild_episodes(fills)
-    fees = float(fills["fee"].sum()) if "fee" in fills else 0.0
+    # 费用按币种核算（OKX-P0-05/A08）：非计价币费用无兑换率时不得混加
+    fee_ccys = fills["fee_ccy"].fillna("").astype(str)
+    fee_ccys = fee_ccys[fee_ccys != ""]
+    inst0 = fills["inst_id"].iloc[0] if len(fills) else ""
+    quote = inst0.split("-")[-1] if "-" in str(inst0) else (fee_ccys.iloc[0] if len(fee_ccys) else "UNKNOWN")
+    quote_fees = fills.loc[fee_ccys == quote, "fee"].sum() if len(fee_ccys) else 0.0
+    mixed = set(fee_ccys.unique()) - {quote}
+    fees = float(quote_fees)
     risk = risk_report(ledger, fees)
+    if mixed:
+        risk["pnl_status"] = "UNVERIFIABLE_FEE_CCY"
+        risk["unverifiable_note"] = f"存在非计价币手续费 {sorted(mixed)} 且无兑换率，净盈亏不可验证"
     out = {"backtest": {k: v for k, v in bt.items() if k not in ("bars",)},
            "buy_and_hold": bh, "risk": risk}
     (ART_DIR / "reports").mkdir(parents=True, exist_ok=True)
