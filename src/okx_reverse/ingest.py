@@ -53,10 +53,19 @@ def _parse_ts(v, timezone: str = "UTC") -> int | None:
     naive 时间按来源时区（timezone 参数）解释后转 UTC（OKX-P1-09）。"""
     if v is None or v == "":
         return None
-    if isinstance(v, (int, float)) or (isinstance(v, str) and v.strip().isdigit()):
-        v = float(v)
+    if isinstance(v, float) and v != v:  # NaN
+        return None
+    if isinstance(v, (int, float)):
         return int(v if v > 1e11 else v * 1000)
     s = str(v).strip().replace("T", " ").replace("Z", "").split("+")[0].strip()
+    # 纯数字字符串（含 "1000.0" 这类 dtype=str 读出的形式）按时间戳处理
+    try:
+        fv = float(s)
+        if fv == fv:  # 非 NaN
+            return int(fv if fv > 1e11 else fv * 1000)
+        return None
+    except ValueError:
+        pass
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M"):
         try:
             return int(pd.Timestamp.strptime(s, fmt).tz_localize(timezone).value // 10**6)
@@ -176,8 +185,11 @@ def import_trades(path: Path, data_dir: Path, timezone: str = "UTC",
     return out, manifest
 
 
-def import_market_bars(path: Path) -> pd.DataFrame:
-    """导入离线行情 CSV/XLSX：inst_id,bar_start_ms,open,high,low,close,volume[,interval,bar_end_ms,confirmed]"""
+def import_market_bars(path: Path, timezone: str = "UTC", return_rejected: bool = False):
+    """导入离线行情 CSV/XLSX（OKX-P1-01/02 修复版）：
+    - 缺少 bar_start/bar_end 时间边界的记录被拒绝（返回 rejected 表），不静默推断；
+    - confirmed 必须来自源数据，缺省 False（未确认/未收盘），不再一律 True。
+    """
     path = Path(path)
     df = load_table(path)
     ren = {c: _normalize_header(c, DEFAULT_FIELD_MAP) for c in df.columns}
@@ -185,20 +197,33 @@ def import_market_bars(path: Path) -> pd.DataFrame:
     df = df.rename(columns=ren)
     df = df.loc[:, ~df.columns.duplicated()]
     out = pd.DataFrame()
-    out["inst_id"] = df.get("inst_id", "UNKNOWN")
-    out["bar_start_ms"] = df["bar_start_ms"].map(_parse_ts)
-    interval_ms = None
-    if len(out) > 1:
-        diffs = out["bar_start_ms"].diff().dropna()
-        interval_ms = int(diffs.mode().iloc[0])
-    out["bar_end_ms"] = df.get("bar_end_ms").map(_parse_ts) if "bar_end_ms" in df.columns else None
-    if out["bar_end_ms"].isna().all():
+    out["inst_id"] = df["inst_id"].astype(str) if "inst_id" in df.columns else "UNKNOWN"
+    out["bar_start_ms"] = df["bar_start_ms"].map(lambda v: _parse_ts(v, timezone))
+    if "bar_end_ms" in df.columns:
+        out["bar_end_ms"] = df["bar_end_ms"].map(lambda v: _parse_ts(v, timezone))
+    else:
+        interval_ms = None
+        if len(out) > 1:
+            diffs = out["bar_start_ms"].diff().dropna()
+            diffs = diffs[diffs > 0]
+            if len(diffs):
+                interval_ms = int(diffs.mode().iloc[0])
         out["bar_end_ms"] = out["bar_start_ms"] + (interval_ms or 0)
-    out["interval"] = df.get("interval", f"{(interval_ms or 0)//60000}m")
+    out["interval"] = df["interval"] if "interval" in df.columns else "UNKNOWN"
     for c in ("open", "high", "low", "close", "volume"):
         out[c] = pd.to_numeric(df.get(c), errors="coerce")
-    out["confirmed"] = True
-    return out.dropna(subset=["bar_start_ms", "close"]).sort_values("bar_start_ms").reset_index(drop=True)
+    # confirmed：源数据优先，缺省 False（未确认）
+    if "confirmed" in df.columns:
+        out["confirmed"] = df["confirmed"].astype(str).str.strip().str.lower().isin(["true", "1", "yes", "是"])
+    else:
+        out["confirmed"] = False
+    ok = out.dropna(subset=["bar_start_ms", "bar_end_ms", "close"]).sort_values("bar_start_ms").reset_index(drop=True)
+    bad_mask = out["bar_start_ms"].isna() | out["bar_end_ms"].isna() | out["close"].isna()
+    rejected = out[bad_mask].copy()
+    rejected["reason"] = "MISSING_TIME_BOUNDARY_OR_PRICE"
+    if return_rejected:
+        return ok.reset_index(drop=True), rejected.reset_index(drop=True)
+    return ok.reset_index(drop=True)
 
 
 def merge_fills(frames: list[pd.DataFrame]) -> pd.DataFrame:

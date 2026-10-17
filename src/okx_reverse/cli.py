@@ -64,6 +64,17 @@ def cmd_audit(args):
     return 0
 
 
+def find_market_for(bars: pd.DataFrame, inst_id: str | None) -> pd.DataFrame:
+    """行情归属 fail-closed（OKX-P1-01）：交易对不匹配即抛错，绝不返回其他币种 K 线。"""
+    if bars is None or bars.empty:
+        raise ValueError("MARKET_NOT_AVAILABLE: 无行情数据")
+    available = sorted(bars["inst_id"].astype(str).unique())
+    if inst_id and inst_id not in available:
+        raise ValueError(f"MARKET_INST_MISMATCH: 需要 {inst_id} 的行情，实际文件包含 {available}；拒绝错配分析")
+    sel = bars[bars["inst_id"] == inst_id] if inst_id else bars
+    return sel.reset_index(drop=True)
+
+
 def _find_market(market_arg: str | None, inst_id: str | None) -> pd.DataFrame | None:
     paths = []
     if market_arg:
@@ -75,9 +86,11 @@ def _find_market(market_arg: str | None, inst_id: str | None) -> pd.DataFrame | 
             bars = import_market_bars(p)
         except Exception:
             continue
-        if inst_id and (bars["inst_id"] == inst_id).any():
-            bars = bars[bars["inst_id"] == inst_id]
-        return bars.reset_index(drop=True)
+        try:
+            return find_market_for(bars, inst_id)
+        except ValueError as e:
+            print(f"WARN: {e}")
+            return None
     return None
 
 
