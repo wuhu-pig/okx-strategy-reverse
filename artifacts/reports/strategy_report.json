@@ -1,0 +1,36 @@
+{
+  "result_type": "SYNTHETIC_DEMO",
+  "observed_fills": 146,
+  "confirmed_bot_fills": 146,
+  "strategy_class": "GRID",
+  "confidence": "MEDIUM",
+  "out_of_sample_evaluated": true,
+  "lookahead_check": "PASS",
+  "warnings": [],
+  "reconstructed": {
+    "instrument_scope": [
+      "DEMO-USDT"
+    ],
+    "position_mode": "net(假设)",
+    "strategy_class": "GRID",
+    "confidence": "MEDIUM",
+    "entry_rule": "rsi_below_30",
+    "exit_rule": "rsi_above_70",
+    "add_rule": {
+      "size_ratio_median": 1.0,
+      "size_ratio_iqr": [
+        1.0,
+        1.0
+      ],
+      "pct_downtrend_adds": 0.9142857142857143,
+      "n_buys": 71,
+      "max_consecutive_buys": 71,
+      "size_mode": "FIXED"
+    },
+    "unsupported_fields": [
+      "初始持仓",
+      "入金/出金",
+      "未成交挂单"
+    ]
+  }
+}

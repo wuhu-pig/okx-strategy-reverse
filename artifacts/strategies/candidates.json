@@ -1,0 +1,205 @@
+{
+  "hypotheses": [
+    {
+      "family": "GRID",
+      "support": 144,
+      "counterevidence": [],
+      "missing_data": [],
+      "strength": "MEDIUM",
+      "parameters": {
+        "buy": {
+          "kind": "ARITHMETIC",
+          "abs_spacing_median": 0.13605000000000445,
+          "pct_spacing_median": 0.0013160621539262118,
+          "arith_cv": 1.181083068318488,
+          "geo_cv": 1.1814415318471234,
+          "n_pairs": 70
+        },
+        "sell": {
+          "kind": "ARITHMETIC",
+          "abs_spacing_median": 0.1343000000000032,
+          "pct_spacing_median": 0.0013671420496301767,
+          "arith_cv": 1.2577187978098985,
+          "geo_cv": 1.2636177576815102,
+          "n_pairs": 74
+        }
+      }
+    },
+    {
+      "family": "DCA_MARTINGALE",
+      "support": 71,
+      "counterevidence": [],
+      "missing_data": [],
+      "strength": "MEDIUM",
+      "parameters": {
+        "size_ratio_median": 1.0,
+        "size_ratio_iqr": [
+          1.0,
+          1.0
+        ],
+        "pct_downtrend_adds": 0.9142857142857143,
+        "n_buys": 71,
+        "max_consecutive_buys": 71,
+        "size_mode": "FIXED"
+      }
+    },
+    {
+      "family": "TIMER_FIXED_AMOUNT",
+      "support": 0,
+      "counterevidence": [
+        "时间间隔或金额方差过大，非定时定额"
+      ],
+      "missing_data": [],
+      "strength": "UNDETERMINED",
+      "parameters": {
+        "gap_hours_median": 7.0,
+        "gap_hours_cv": 0.9033301670151869,
+        "notional_cv": 0.056490963962181825,
+        "n": 146
+      }
+    }
+  ],
+  "meta": {
+    "structure_warnings": [],
+    "signal_oos": {
+      "rsi_below_30": {
+        "train": {
+          "signals": 436,
+          "fills": 47,
+          "matched": 46,
+          "precision": 0.10550458715596331,
+          "recall": 0.9787234042553191
+        },
+        "validation": {
+          "signals": 120,
+          "fills": 12,
+          "matched": 12,
+          "precision": 0.1,
+          "recall": 1.0
+        },
+        "test": {
+          "signals": 110,
+          "fills": 12,
+          "matched": 12,
+          "precision": 0.10909090909090909,
+          "recall": 1.0
+        }
+      },
+      "bb_lower_touch": {
+        "train": {
+          "signals": 40,
+          "fills": 47,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        },
+        "validation": {
+          "signals": 11,
+          "fills": 12,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        },
+        "test": {
+          "signals": 14,
+          "fills": 12,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        }
+      },
+      "golden_cross": {
+        "train": {
+          "signals": 4,
+          "fills": 47,
+          "matched": 1,
+          "precision": 0.25,
+          "recall": 0.02127659574468085
+        },
+        "validation": {
+          "signals": 2,
+          "fills": 12,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        },
+        "test": {
+          "signals": 1,
+          "fills": 12,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        }
+      },
+      "breakout_high_20": {
+        "train": {
+          "signals": 175,
+          "fills": 47,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        },
+        "validation": {
+          "signals": 106,
+          "fills": 12,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        },
+        "test": {
+          "signals": 84,
+          "fills": 12,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        }
+      },
+      "rsi_above_70": {
+        "train": {
+          "signals": 342,
+          "fills": 40,
+          "matched": 35,
+          "precision": 0.1023391812865497,
+          "recall": 0.875
+        },
+        "validation": {
+          "signals": 152,
+          "fills": 16,
+          "matched": 16,
+          "precision": 0.10526315789473684,
+          "recall": 1.0
+        },
+        "test": {
+          "signals": 172,
+          "fills": 19,
+          "matched": 19,
+          "precision": 0.11046511627906977,
+          "recall": 1.0
+        }
+      },
+      "breakdown_low_20": {
+        "train": {
+          "signals": 246,
+          "fills": 40,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        },
+        "validation": {
+          "signals": 65,
+          "fills": 16,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        },
+        "test": {
+          "signals": 57,
+          "fills": 19,
+          "matched": 0,
+          "precision": 0.0,
+          "recall": 0.0
+        }
+      }
+    }
+  }
+}

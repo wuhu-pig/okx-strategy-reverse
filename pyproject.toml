@@ -1,0 +1,10 @@
+[project]
+name = "okx-reverse"
+version = "0.1.0"
+description = "OKX 交易机器人策略逆向分析系统（只读/离线）"
+requires-python = ">=3.11"
+dependencies = ["pandas", "numpy", "openpyxl", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
