@@ -48,8 +48,9 @@ def _normalize_header(col: str, mapping: dict) -> str | None:
     return mapping.get(key, key.replace(" ", "_").lower())
 
 
-def _parse_ts(v) -> int | None:
-    """时间 -> UTC 毫秒。支持 毫秒整数、秒数、ISO 字符串、'2024/01/02 03:04:05'。"""
+def _parse_ts(v, timezone: str = "UTC") -> int | None:
+    """时间 -> UTC 毫秒。支持 毫秒整数、秒数、ISO 字符串、'2024/01/02 03:04:05'。
+    naive 时间按来源时区（timezone 参数）解释后转 UTC（OKX-P1-09）。"""
     if v is None or v == "":
         return None
     if isinstance(v, (int, float)) or (isinstance(v, str) and v.strip().isdigit()):
@@ -58,13 +59,16 @@ def _parse_ts(v) -> int | None:
     s = str(v).strip().replace("T", " ").replace("Z", "").split("+")[0].strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M"):
         try:
-            return int(pd.Timestamp.strptime(s, fmt).tz_localize("UTC").value // 10**6)
+            return int(pd.Timestamp.strptime(s, fmt).tz_localize(timezone).value // 10**6)
         except Exception:
             continue
     try:
         return int(pd.Timestamp(s).tz_convert("UTC").value // 10**6)
     except Exception:
-        return int(pd.Timestamp(s, tz="UTC").value // 10**6) if pd.Timestamp(s).tzinfo else int(pd.Timestamp(s).tz_localize("UTC").value // 10**6)
+        try:
+            return int(pd.Timestamp(s).tz_localize(timezone).value // 10**6)
+        except Exception:
+            return None
 
 
 def load_table(path: Path) -> pd.DataFrame:
@@ -105,30 +109,39 @@ def import_trades(path: Path, data_dir: Path, timezone: str = "UTC",
     df = df.loc[:, ~df.columns.duplicated()]
 
     notes: list[str] = []
-    for required in ("ts_ms", "side", "fill_price", "fill_qty"):
-        if required not in df.columns:
-            notes.append(f"MISSING_COLUMN:{required}")
+    # 必填列 fail-fast（OKX-P0-04）：缺失即抛错，不静默产出坏数据
+    missing_required = [c for c in ("ts_ms", "side", "fill_price", "fill_qty") if c not in df.columns]
+    if missing_required:
+        raise ValueError(f"REQUIRED_COLUMNS_MISSING: {missing_required}；"
+                         f"可用列: {list(df.columns)}。请检查字段映射 (--mapping)。")
+
+    def _col(name: str, default) -> pd.Series:
+        """可选列安全取值：缺失时返回与行数等长的默认 Series（OKX-P0-04）。"""
+        if name in df.columns:
+            return df[name]
+        return pd.Series([default] * len(df), index=df.index)
 
     out = pd.DataFrame()
-    out["trade_id"] = df["trade_id"] if "trade_id" in df.columns else ""
-    out["order_id"] = df.get("order_id", "")
-    out["inst_id"] = df.get("inst_id", "UNKNOWN")
-    out["inst_type"] = df.get("inst_type", "UNKNOWN")
-    out["ts_ms"] = df["ts_ms"].map(_parse_ts) if "ts_ms" in df.columns else None
-    side = df.get("side", "").astype(str).str.strip().str.lower()
+    out["trade_id"] = _col("trade_id", "").astype(str)
+    out["order_id"] = _col("order_id", "").astype(str)
+    out["inst_id"] = _col("inst_id", "UNKNOWN").astype(str)
+    out["inst_type"] = _col("inst_type", "UNKNOWN").astype(str)
+    out["ts_ms"] = df["ts_ms"].map(lambda v: _parse_ts(v, timezone))
+    side = _col("side", "").astype(str).str.strip().str.lower()
     out["side"] = side.map({"buy": "buy", "b": "buy", "买入": "buy", "sell": "sell", "s": "sell", "卖出": "sell"}).fillna(side)
-    out["pos_side"] = df.get("pos_side", "").astype(str).str.strip().str.lower().fillna("")
-    out["reduce_only"] = df.get("reduce_only", "").astype(str).str.strip().str.lower().isin(["true", "yes", "1", "是"])
-    out["fill_price"] = pd.to_numeric(df.get("fill_price"), errors="coerce")
-    out["fill_qty"] = pd.to_numeric(df.get("fill_qty"), errors="coerce")
-    out["qty_unit"] = df.get("qty_unit", "base")
-    out["fee"] = pd.to_numeric(df.get("fee"), errors="coerce").fillna(0.0)
-    out["fee_ccy"] = df.get("fee_ccy", "")
-    out["maker_taker"] = df.get("maker_taker", "")
-    out["bot_id"] = df.get("bot_id", "").fillna("")
+    out["pos_side"] = _col("pos_side", "").astype(str).str.strip().str.lower()
+    out["reduce_only"] = _col("reduce_only", "").astype(str).str.strip().str.lower().isin(["true", "yes", "1", "是"])
+    out["fill_price"] = pd.to_numeric(_col("fill_price", None), errors="coerce")
+    out["fill_qty"] = pd.to_numeric(_col("fill_qty", None), errors="coerce")
+    out["qty_unit"] = _col("qty_unit", "base").astype(str)
+    out["fee"] = pd.to_numeric(_col("fee", 0.0), errors="coerce").fillna(0.0)
+    out["fee_ccy"] = _col("fee_ccy", "").astype(str)
+    out["maker_taker"] = _col("maker_taker", "").astype(str)
+    out["bot_id"] = _col("bot_id", "").astype(str).str.strip()
     out["origin_confidence"] = "UNKNOWN"
-    out.loc[out["bot_id"].astype(str).str.len() > 0, "origin_confidence"] = "CONFIRMED_BOT"
-    out["source_tag"] = df.get("source_tag", "").fillna("") if "source_tag" in df.columns else ""
+    out.loc[out["bot_id"].str.len() > 0, "origin_confidence"] = "CONFIRMED_BOT"
+    src_tag = _col("source_tag", "").astype(str) if "source_tag" in df.columns else pd.Series([""] * len(df), index=df.index)
+    out["source_tag"] = src_tag
     out.loc[out["source_tag"] == "", "source_tag"] = ("USER_EXPORT" if source_type in ("okx_csv", "auto") else source_type.upper())
     out["source_id"] = source_id
     out["row_hash"] = [hashlib.sha256("|".join(map(str, r)).encode()).hexdigest()[:16]
@@ -186,3 +199,34 @@ def import_market_bars(path: Path) -> pd.DataFrame:
         out[c] = pd.to_numeric(df.get(c), errors="coerce")
     out["confirmed"] = True
     return out.dropna(subset=["bar_start_ms", "close"]).sort_values("bar_start_ms").reset_index(drop=True)
+
+
+def merge_fills(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """跨文件幂等合并（OKX-P0-04/A05）：
+    - 相同 (inst_id, trade_id)（trade_id 非空）跨导出只保留最早来源的一条；
+    - 无 trade_id 行按 (ts_ms, inst_id, side, fill_price, fill_qty) 去重，其余保留；
+    - 保留 source lineage（source_id 列），不丢失任何来源标记。
+    """
+    if not frames:
+        return pd.DataFrame(columns=NORMALIZED_FILL_COLUMNS)
+    df = pd.concat(frames, ignore_index=True)
+    has_id = df["trade_id"].astype(str).str.len() > 0
+    with_id = df[has_id].sort_values("source_id").drop_duplicates(subset=["inst_id", "trade_id"], keep="first")
+    without = df[~has_id].drop_duplicates(subset=["ts_ms", "inst_id", "side", "fill_price", "fill_qty"])
+    out = pd.concat([without, with_id], ignore_index=True)
+    return out.sort_values("ts_ms").reset_index(drop=True)
+
+
+def analysis_groups(fills: pd.DataFrame) -> dict:
+    """多 bot / 多交易对严格隔离（OKX-P0-04/A06）：
+    按 (inst_id, bot_id) 分组；UNKNOWN 来源永远单独成组，绝不与 CONFIRMED 合并推断。
+    """
+    groups: dict = {}
+    f = fills.copy()
+    f["bot_id"] = f.get("bot_id", "").astype(str).fillna("").str.strip()
+    confirmed = f["bot_id"].str.len() > 0
+    for (inst_id, bot_id), g in f[confirmed].groupby(["inst_id", "bot_id"]):
+        groups[(inst_id, bot_id)] = g.reset_index(drop=True)
+    for (inst_id), g in f[~confirmed].groupby("inst_id"):
+        groups[(inst_id, "UNKNOWN")] = g.reset_index(drop=True)
+    return groups
