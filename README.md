@@ -57,3 +57,12 @@ RSI 均值回归、布林带、EMA 金叉趋势、20 期突破。证据强度仅
 - `data/raw/` 原始文件只读快照（含 sha256）
 - `tests/` G01–G18 验收测试
 - `handoff/` 交接与验收报告
+
+## 多 Agent 审计与整改交接（2026-10-17）
+
+- [独立静态审计报告](docs/reviews/REVIEW-20261017-001.md)：以 main@f909164 为基线；问题清单、源码证据、验收门禁。
+- [统一 Agent/Git 交接协议](docs/AGENT_HANDOFF_PROTOCOL.md)：Executor/Reviewer 职责、分支/commit、状态机及验收证据规范。
+- [下一轮整改任务单](handoff/REMEDIATION-20261017-001.md)：Wave A 数据、Wave B 识别、Wave C 回测。
+- [交接报告模板](handoff/HANDOFF_TEMPLATE.md)：所有 AI 提交时按同一 schema 记录。
+
+**重要：当前 18 passed 来源于原开发报告，未完成独立实测验收；暂不得将 SYNTHETIC_DEMO 的 GRID/MEDIUM 识别结果解释为用户真实机器人的策略。**
