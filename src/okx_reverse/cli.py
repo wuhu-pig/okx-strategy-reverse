@@ -168,8 +168,18 @@ def cmd_backtest(args):
     bt = run_strategy(bars, entry, exit_, cfg)
     bh = buy_and_hold(bars, cfg)
     ledger, _ = rebuild_episodes(fills)
-    fees = float(fills["fee"].sum()) if "fee" in fills else 0.0
+    # 费用按币种核算（OKX-P0-05/A08）：非计价币费用无兑换率时不得混加
+    fee_ccys = fills["fee_ccy"].fillna("").astype(str)
+    fee_ccys = fee_ccys[fee_ccys != ""]
+    inst0 = fills["inst_id"].iloc[0] if len(fills) else ""
+    quote = inst0.split("-")[-1] if "-" in str(inst0) else (fee_ccys.iloc[0] if len(fee_ccys) else "UNKNOWN")
+    quote_fees = fills.loc[fee_ccys == quote, "fee"].sum() if len(fee_ccys) else 0.0
+    mixed = set(fee_ccys.unique()) - {quote}
+    fees = float(quote_fees)
     risk = risk_report(ledger, fees)
+    if mixed:
+        risk["pnl_status"] = "UNVERIFIABLE_FEE_CCY"
+        risk["unverifiable_note"] = f"存在非计价币手续费 {sorted(mixed)} 且无兑换率，净盈亏不可验证"
     out = {"backtest": {k: v for k, v in bt.items() if k not in ("bars",)},
            "buy_and_hold": bh, "risk": risk}
     (ART_DIR / "reports").mkdir(parents=True, exist_ok=True)
